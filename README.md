@@ -14,7 +14,7 @@ It's a collection of multi agent environments based on OpenAI gym. Also, you can
 
 - Setup (important):
    ```bash
-      pip install 'pip<=23.0.1'
+      pip install 'pip<24.1'
       pip install 'setuptools<=66'
       pip install 'wheel<=0.38.4'
    ```
