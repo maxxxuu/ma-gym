@@ -146,6 +146,47 @@ class Combat(gym.Env):
             _obs.append(_agent_i_obs)
         return _obs
 
+    def get_opp_obs(self):
+        """
+        When input to a model, each agent is represented by a set of one-hot binary vectors {i, t, l, h, c}
+        encoding its team ID, unique ID, location, health points and cooldown.
+        A model controlling an agent also sees other agents in its visual range (5 × 5 surrounding area).
+        :return:
+        """
+        _obs = []
+        for opp_i in range(self._n_opponents):
+            # team id , unique id, location, health, cooldown
+            _opp_i_obs = np.zeros((6, 5, 5))
+            hp = self.opp_health[opp_i]
+
+            # If agent is alive
+            if hp > 0:
+                # _agent_i_obs = self._one_hot_encoding(agent_i, self.n_agents)
+                # _agent_i_obs += [pos[0] / self._grid_shape[0], pos[1] / (self._grid_shape[1] - 1)]  # coordinates
+                # _agent_i_obs += [self.agent_health[agent_i]]
+                # _agent_i_obs += [1 if self._agent_cool else 0]  # flag if agent is cooling down
+
+                pos = self.opp_pos[opp_i]
+                for row in range(0, 5):
+                    for col in range(0, 5):
+                        if self.is_valid([row + (pos[0] - 2), col + (pos[1] - 2)]) and (
+                                PRE_IDS['empty'] not in self._full_obs[row + (pos[0] - 2)][col + (pos[1] - 2)]):
+                            x = self._full_obs[row + pos[0] - 2][col + pos[1] - 2]
+                            _type = 1 if PRE_IDS['opponent'] in x else -1
+                            _id = int(x[1:]) - 1  # id
+                            _opp_i_obs[0][row][col] = _type
+                            _opp_i_obs[1][row][col] = _id
+                            _opp_i_obs[2][row][col] = self.opp_health[_id] if _type == 1 else self.agent_health[_id]
+                            _opp_i_obs[3][row][col] = self._opp_cool[_id] if _type == 1 else self._agent_cool[_id]
+                            _opp_i_obs[3][row][col] = 1 if _opp_i_obs[3][row][col] else -1  # cool/uncool
+                            entity_position = self.opp_pos[_id] if _type == 1 else self.agent_pos[_id]
+                            _opp_i_obs[4][row][col] = entity_position[0] / self._grid_shape[0]  # x-coordinate
+                            _opp_i_obs[5][row][col] = entity_position[1] / self._grid_shape[1]  # y-coordinate
+
+            _opp_i_obs = _opp_i_obs.flatten().tolist()
+            _obs.append(_opp_i_obs)
+        return _obs
+
     def get_state(self):
         state = np.zeros((self.n_agents + self._n_opponents, 6))
         # agent info
@@ -257,14 +298,14 @@ class Combat(gym.Env):
         for agent_i in range(self.n_agents):
             if self.agent_health[agent_i] > 0:
                 fill_cell(img, self.agent_pos[agent_i], cell_size=CELL_SIZE, fill=AGENT_COLOR)
-                write_cell_text(img, text=str(agent_i + 1), pos=self.agent_pos[agent_i], cell_size=CELL_SIZE,
+                write_cell_text(img, text=str(agent_i + 1)+f"({self.agent_health[agent_i]})", pos=self.agent_pos[agent_i], cell_size=CELL_SIZE,
                                 fill='white', margin=0.3)
 
         # draw opponents
         for opp_i in range(self._n_opponents):
             if self.opp_health[opp_i] > 0:
                 fill_cell(img, self.opp_pos[opp_i], cell_size=CELL_SIZE, fill=OPPONENT_COLOR)
-                write_cell_text(img, text=str(opp_i + 1), pos=self.opp_pos[opp_i], cell_size=CELL_SIZE,
+                write_cell_text(img, text=str(opp_i + 1)+f"({self.opp_health[opp_i]})", pos=self.opp_pos[opp_i], cell_size=CELL_SIZE,
                                 fill='white', margin=0.3)
 
         img = np.asarray(img)
@@ -423,7 +464,7 @@ class Combat(gym.Env):
             opp_action_n.append(action)
         return opp_action_n
 
-    def step(self, agents_action):
+    def step(self, agents_action, opps_action=None):
         assert (self._step_count is not None), \
             "Call reset before using step method."
 
@@ -464,7 +505,7 @@ class Combat(gym.Env):
                 if self._agent_cool_step[agent_i] == 0 and not self._agent_cool[agent_i]:
                     self._agent_cool[agent_i] = True
 
-        opp_action = self.opps_action
+        opp_action = self.opps_action if opps_action is None else opps_action
         for opp_i, action in enumerate(opp_action):
             if self.opp_health[opp_i] > 0:
                 target_agent = action - 5
